@@ -1,67 +1,43 @@
-# CV Analysis Studio v0.2.1
+# CV Analysis Studio v0.2.2
 
-Professional local web application for CV data extraction, review, calculation,
-and Excel export.
+Hosted-ready professional Streamlit application for CV data extraction,
+review, calculation, and Excel export.
 
-## Simplified v0.2.1 workflow
+## Import options
 
-1. Import source files using either:
-   - **Upload files** — one or many files selected in the browser.
-   - **Import local folder** — provide a folder path on the same machine running the app.
-2. Automatic CV analysis.
-3. Review the reconstructed graph and automatically selected:
-   - FBC
-   - APC / EPA
-   - BBC
-   - CPC / EPC
-4. Manually adjust any point by entering its potential, exactly like v0.1.
-5. Export the final Excel workbook.
+### Upload files
 
-## Removed from v0.2
+Select one or multiple supported CV files manually.
 
-- Validation Lab
-- Alternative candidate-selection workflow
-- Extra calibration screens
+### Upload folder
 
-## Confidence
+Choose a single folder from your computer. The browser uploads all supported
+CSV/Excel files from that folder together.
 
-- Review threshold: **75%**
-- The number is based on detector stability when the onset threshold is varied slightly.
-- It is not presented as a guaranteed scientific accuracy percentage.
-- Anything below 75% is marked `Needs review`.
-- Manual adjustment is available for every graph.
+This works correctly when the application is hosted on Streamlit Community Cloud;
+no local filesystem path is required.
 
-## Supported import formats
+## Supported formats
 
 - CSV
 - XLS
 - XLSX
 - XLSM
 
-## Folder import
+## Workflow
 
-Because this is a local Streamlit application, you can enter a folder path such as:
+1. Upload files or upload a folder.
+2. Run automatic CV analysis.
+3. Review FBC, APC, BBC and CPC markers.
+4. Manually adjust any point when necessary.
+5. Review calculated IPA, IPC, IPA/IPC and ΔE.
+6. Export the final Excel workbook.
 
-```text
-/Users/name/Desktop/CV Data
-```
+## Review threshold
 
-or on Windows:
+Automatic FBC/BBC review threshold: **75%**.
 
-```text
-C:\Users\Name\Desktop\CV Data
-```
-
-The app can optionally include supported files inside subfolders.
-
-## Run on macOS / Linux
-
-```bash
-chmod +x run_mac_linux.sh
-./run_mac_linux.sh
-```
-
-Or manually:
+## Run locally
 
 ```bash
 python3 -m venv .venv
@@ -70,8 +46,12 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Run on Windows
+## Streamlit Community Cloud
 
-```bat
-run_windows.bat
-```
+Deploy the repository using:
+
+- Branch: `main`
+- Main file: `app.py`
+
+When new commits are pushed to the deployed branch, Streamlit Community Cloud
+updates the same application URL.

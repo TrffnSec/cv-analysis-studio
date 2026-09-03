@@ -48,7 +48,7 @@ def main():
     assert 0.0 <= bundle.diagnostics["overall_confidence"] <= 1.0
     assert bundle.diagnostics["review_threshold"] == 0.75
 
-    print("CV Analysis Studio v0.2.1 smoke test passed.")
+    print("CV Analysis Studio v0.2.2 smoke test passed.")
 
 
 if __name__ == "__main__":

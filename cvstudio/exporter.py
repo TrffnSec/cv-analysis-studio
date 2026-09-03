@@ -101,7 +101,7 @@ def build_results_xlsx(rows):
     ws.set_row(0, 28)
     ws.merge_range(
         "A2:M2",
-        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} • CV Analysis Studio v0.2.1",
+        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} • CV Analysis Studio v0.2.2",
         subtitle_fmt,
     )
 

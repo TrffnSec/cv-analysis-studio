@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
-import io
-
 import pandas as pd
 import streamlit as st
 
 from cvstudio.calculations import calculate
 from cvstudio.detection import detect_cv, snap_point_to_potential
 from cvstudio.exporter import build_results_xlsx
-from cvstudio.io import CVDataError, display_graph_name, read_cv_bytes
+from cvstudio.io import display_graph_name, read_cv_bytes
 from cvstudio.ui import inject_css, make_cv_figure
 
 
 APP_NAME = "CV Analysis Studio"
-SUPPORTED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".xlsm"}
-
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -44,6 +39,7 @@ def refresh_calculation(record):
 
 def analyse_payload(name: str, payload: bytes):
     settings = st.session_state.analysis_settings
+
     df = read_cv_bytes(name, payload)
 
     bundle = detect_cv(
@@ -67,6 +63,7 @@ def analyse_payload(name: str, payload: bytes):
             else "Ready"
         ),
     }
+
     refresh_calculation(record)
     return record
 
@@ -77,46 +74,21 @@ def analyse_uploaded_files(uploaded_files):
 
     for uploaded in uploaded_files:
         try:
-            created[uploaded.name] = analyse_payload(
-                uploaded.name,
+            # Directory upload may preserve a relative path in uploaded.name.
+            # Keep the path as a unique key but use only the basename as graph name.
+            key = uploaded.name
+            basename = uploaded.name.replace("\\", "/").split("/")[-1]
+
+            created[key] = analyse_payload(
+                basename,
                 uploaded.getvalue(),
             )
+
+            # Preserve relative folder context only for uniqueness/reference.
+            created[key]["source_path"] = uploaded.name
+
         except Exception as exc:
             failures.append((uploaded.name, str(exc)))
-
-    st.session_state.records = created
-    return failures
-
-
-def collect_folder_files(folder_path: str, recursive: bool):
-    folder = Path(folder_path).expanduser()
-
-    if not folder.exists():
-        raise ValueError("Folder does not exist.")
-    if not folder.is_dir():
-        raise ValueError("The supplied path is not a folder.")
-
-    iterator = folder.rglob("*") if recursive else folder.glob("*")
-
-    paths = [
-        p for p in iterator
-        if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
-    ]
-    return sorted(paths, key=lambda p: p.name.lower())
-
-
-def analyse_folder(folder_path: str, recursive: bool):
-    created = {}
-    failures = []
-
-    for path in collect_folder_files(folder_path, recursive):
-        try:
-            created[str(path)] = analyse_payload(
-                path.name,
-                path.read_bytes(),
-            )
-        except Exception as exc:
-            failures.append((path.name, str(exc)))
 
     st.session_state.records = created
     return failures
@@ -141,6 +113,7 @@ def rerun_record(key):
         if bundle.diagnostics["needs_review"]
         else "Ready"
     )
+
     refresh_calculation(record)
 
 
@@ -175,7 +148,7 @@ def render_sidebar():
             <div class="cv-brand">
                 <div class="cv-brand-title">◈ CV Analysis Studio</div>
                 <div class="cv-brand-subtitle">
-                    Biomedical CV extraction workspace · v0.2.1
+                    Biomedical CV extraction workspace · v0.2.2
                 </div>
             </div>
             """,
@@ -222,6 +195,7 @@ def render_sidebar():
         }
 
         st.divider()
+
         st.markdown(
             """
             <div class="small-note">
@@ -239,12 +213,12 @@ def hero():
     st.markdown(
         """
         <div class="hero">
-            <h1>CV Analysis Studio <span style="opacity:.55">v0.2.1</span></h1>
+            <h1>CV Analysis Studio <span style="opacity:.55">v0.2.2</span></h1>
             <p>
-                Import CV source data by individual files or by an entire local
-                folder, automatically extract peak/baseline values, review the
-                graph visually, manually correct any point when required, and
-                export the final calculated Excel workbook.
+                Upload individual CV files or choose an entire folder from your
+                computer, automatically extract peak/baseline values, review the
+                detected points visually, manually correct any value when required,
+                and export the final calculated Excel workbook.
             </p>
         </div>
         """,
@@ -270,85 +244,100 @@ with tab_import:
         '<div class="section-title">Import CV source data</div>',
         unsafe_allow_html=True,
     )
+
     st.markdown(
         '<div class="section-copy">'
-        "Choose either file upload or local-folder import. One source file becomes one result row."
+        "Choose individual files or select a complete folder. "
+        "One supported source file becomes one result row."
         "</div>",
         unsafe_allow_html=True,
     )
 
     import_mode = st.radio(
         "Import method",
-        ["Upload files", "Import local folder"],
+        ["Upload files", "Upload folder"],
         horizontal=True,
     )
 
     failures = []
+    selected_files = None
 
     if import_mode == "Upload files":
-        uploads = st.file_uploader(
+        selected_files = st.file_uploader(
             "Select one or more CV files",
             type=["csv", "xlsx", "xls", "xlsm"],
             accept_multiple_files=True,
+            key="cv-file-uploader",
+            help="Select one file or multiple files at once.",
         )
 
-        if st.button(
+        if selected_files:
+            st.caption(
+                f"{len(selected_files)} supported file(s) selected."
+            )
+
+        analyse_clicked = st.button(
             "Analyze uploaded files",
             type="primary",
-            disabled=not uploads,
-        ):
-            with st.spinner("Analysing CV files..."):
-                failures = analyse_uploaded_files(uploads)
+            disabled=not selected_files,
+            key="analyse-files",
+        )
 
     else:
         st.info(
-            "Folder import works because CV Analysis Studio runs locally. "
-            "Paste or type a folder path from this computer."
+            "Choose a folder from your computer. "
+            "The browser will upload the supported CV files from that folder."
         )
 
-        folder_path = st.text_input(
-            "Folder containing CV files",
-            placeholder="/Users/name/Desktop/CV Data",
+        selected_files = st.file_uploader(
+            "Choose folder containing CV files",
+            type=["csv", "xlsx", "xls", "xlsm"],
+            accept_multiple_files="directory",
+            key="cv-folder-uploader",
+            help=(
+                "Select one folder. Supported CSV/Excel files inside it "
+                "will be uploaded together."
+            ),
         )
 
-        recursive = st.checkbox(
-            "Include supported files inside subfolders",
-            value=False,
-        )
+        if selected_files:
+            st.caption(
+                f"{len(selected_files)} supported file(s) found in the selected folder."
+            )
 
-        if folder_path:
-            try:
-                folder_files = collect_folder_files(folder_path, recursive)
+            preview_names = [
+                f.name for f in selected_files[:15]
+            ]
+            st.code("\n".join(preview_names))
+
+            if len(selected_files) > 15:
                 st.caption(
-                    f"Found {len(folder_files)} supported file(s): "
-                    "CSV, XLS, XLSX or XLSM."
+                    f"...and {len(selected_files) - 15} more file(s)."
                 )
-                if folder_files:
-                    preview_names = [p.name for p in folder_files[:12]]
-                    st.code("\n".join(preview_names))
-                    if len(folder_files) > 12:
-                        st.caption(
-                            f"...and {len(folder_files) - 12} more file(s)."
-                        )
-            except Exception as exc:
-                st.warning(str(exc))
 
-        if st.button(
-            "Analyze folder",
+        analyse_clicked = st.button(
+            "Analyze uploaded folder",
             type="primary",
-            disabled=not folder_path,
-        ):
-            try:
-                with st.spinner("Importing and analysing folder..."):
-                    failures = analyse_folder(folder_path, recursive)
-            except Exception as exc:
-                st.error(str(exc))
+            disabled=not selected_files,
+            key="analyse-folder",
+        )
+
+    if analyse_clicked:
+        with st.spinner("Analysing CV files..."):
+            failures = analyse_uploaded_files(selected_files)
+
+        if st.session_state.records:
+            st.success(
+                f"Analysed {len(st.session_state.records)} file(s). "
+                "Continue to the Review tab."
+            )
 
     for name, error in failures:
         st.error(f"{name}: {error}")
 
     if st.session_state.records:
         records = list(st.session_state.records.values())
+
         below_threshold = sum(
             1
             for r in records
@@ -356,20 +345,26 @@ with tab_import:
         )
 
         m1, m2, m3, m4 = st.columns(4)
+
         m1.metric("Files loaded", len(records))
+
         m2.metric(
             "Data points",
             f"{sum(len(r['df']) for r in records):,}",
         )
+
         m3.metric("Below 75%", below_threshold)
+
         m4.metric(
             "Mean confidence",
             f"{sum(r['bundle'].diagnostics['overall_confidence'] for r in records) / len(records):.0%}",
         )
 
         summary = []
+
         for r in records:
             d = r["bundle"].diagnostics
+
             summary.append(
                 {
                     "Graph": r["graph_name"],
@@ -396,6 +391,7 @@ with tab_import:
 with tab_review:
     if not st.session_state.records:
         st.info("Import and analyse CV files first.")
+
     else:
         keys = list(st.session_state.records)
 
@@ -412,10 +408,12 @@ with tab_review:
         diagnostics = record["bundle"].diagnostics
 
         top1, top2, top3 = st.columns([1.2, 1.2, 3.6])
+
         top1.metric(
             "Confidence",
             f"{diagnostics['overall_confidence']:.0%}",
         )
+
         top2.metric(
             "Threshold",
             "75%",
@@ -436,30 +434,47 @@ with tab_review:
                 record["graph_name"],
             ),
             use_container_width=True,
-            config={"displaylogo": False, "scrollZoom": True},
+            config={
+                "displaylogo": False,
+                "scrollZoom": True,
+            },
         )
 
         calc = record["calculation"]
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("IPA", f"{calc['IPA']:.8e} A")
-        m2.metric("IPC", f"{calc['IPC']:.8e} A")
+
+        m1.metric(
+            "IPA",
+            f"{calc['IPA']:.8e} A",
+        )
+
+        m2.metric(
+            "IPC",
+            f"{calc['IPC']:.8e} A",
+        )
+
         m3.metric(
             "IPA / IPC",
             "—"
             if calc["IPA/IPC"] is None
             else f"{calc['IPA/IPC']:.6f}",
         )
-        m4.metric("ΔE", f"{calc['ΔE (V)']:.6f} V")
+
+        m4.metric(
+            "ΔE",
+            f"{calc['ΔE (V)']:.6f} V",
+        )
 
         st.markdown(
             '<div class="section-title">Manual point adjustment</div>',
             unsafe_allow_html=True,
         )
+
         st.markdown(
             '<div class="section-copy">'
-            "Same behaviour as v0.1: enter the desired potential and the app snaps "
-            "that marker to the nearest measured raw data point on the correct scan."
+            "Enter the desired potential and the app snaps that marker to the "
+            "nearest measured raw point on the correct scan direction."
             "</div>",
             unsafe_allow_html=True,
         )
@@ -467,7 +482,10 @@ with tab_review:
         edit_cols = st.columns(4)
         edits = {}
 
-        for col, label in zip(edit_cols, ["FBC", "APC", "BBC", "CPC"]):
+        for col, label in zip(
+            edit_cols,
+            ["FBC", "APC", "BBC", "CPC"],
+        ):
             p = record["points"][label]
 
             with col:
@@ -477,11 +495,15 @@ with tab_review:
                     format="%.8f",
                     key=f"{selected}-{label}-manual-{p.index}",
                 )
+
                 st.caption(
                     f"Current: `{p.current:.10e} A`"
                 )
+
                 st.caption(
-                    "Manual" if p.source == "manual" else "Automatic"
+                    "Manual"
+                    if p.source == "manual"
+                    else "Automatic"
                 )
 
         if st.button(
@@ -505,8 +527,13 @@ with tab_review:
             if changed:
                 record["review_status"] = "Manually reviewed"
                 refresh_calculation(record)
-                st.success("Manual point adjustments applied.")
+
+                st.success(
+                    "Manual point adjustments applied."
+                )
+
                 st.rerun()
+
             else:
                 st.info("No point values were changed.")
 
@@ -521,9 +548,9 @@ with tab_review:
 with tab_results:
     if not st.session_state.records:
         st.info("Import and analyse CV files first.")
+
     else:
         rows = export_rows()
-
         preview = []
 
         for idx, item in enumerate(rows, 1):
@@ -561,8 +588,11 @@ with tab_results:
         st.download_button(
             "Export final Excel workbook",
             data=excel_bytes,
-            file_name="CV_Analysis_Results_v0.2.1.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file_name="CV_Analysis_Results_v0.2.2.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
             type="primary",
         )
 
@@ -594,6 +624,5 @@ with tab_method:
 
     st.info(
         "Automatic FBC/BBC confidence is based on onset stability. "
-        "75% is the review threshold, not a fabricated accuracy guarantee. "
-        "Any graph can be manually corrected from the Review tab."
+        "75% is the review threshold. Every graph can still be manually corrected."
     )
